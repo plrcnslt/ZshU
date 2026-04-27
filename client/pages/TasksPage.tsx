@@ -42,11 +42,15 @@ import {
   Loader,
   Tag,
 } from "lucide-react";
-import { supabase, Task as TaskType, Complaint } from "../lib/supabase";
+import { supabase, Task as TaskType, Complaint, TaskResponse, TaskProposal, TodoListItem, UserProfile } from "../lib/supabase";
 import { toast } from "../hooks/use-toast";
 import FileUploadZone, { FileAttachment } from "../components/FileUploadZone";
 import AttachmentList from "../components/AttachmentList";
 import { useFileUpload } from "../hooks/useFileUpload";
+import TaskResponseModal from "../components/TaskResponseModal";
+import ManagerProposalReview from "../components/ManagerProposalReview";
+import TodoItem from "../components/TodoItem";
+import TaskChat from "../components/TaskChat";
 
 interface TaskUI extends TaskType {
   // Extended UI properties for display
@@ -112,14 +116,100 @@ const TasksPage: React.FC = () => {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  const [userRole, setUserRole] = useState<"guest" | "manager" | "service_provider" | null>(null);
   const [internalStaff, setInternalStaff] = useState<any[]>([]);
   const [externalVendors, setExternalVendors] = useState<any[]>([]);
+
+  // Task responses and proposals
+  const [taskResponses, setTaskResponses] = useState<TaskResponse[]>([]);
+  const [taskProposals, setTaskProposals] = useState<TaskProposal[]>([]);
+  const [todoItems, setTodoItems] = useState<TodoListItem[]>([]);
+
+  // Modal states
+  const [showResponseModal, setShowResponseModal] = useState(false);
+  const [selectedTaskForResponse, setSelectedTaskForResponse] = useState<TaskUI | null>(null);
 
   // Sync URL with tab changes
   useEffect(() => {
     const newTab = getTabFromPath();
     setActiveTab(newTab);
   }, [location.pathname]);
+
+  // Subscribe to real-time updates for task responses, proposals, and todos
+  useEffect(() => {
+    // Subscribe to task responses
+    const responsesSubscription = supabase
+      .channel("task_responses")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_responses",
+        },
+        () => {
+          // Reload task responses when any change occurs
+          supabase
+            .from("task_responses")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .then(({ data }) => setTaskResponses(data || []));
+        }
+      )
+      .subscribe();
+
+    // Subscribe to task proposals
+    const proposalsSubscription = supabase
+      .channel("task_proposals")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_proposals",
+        },
+        () => {
+          // Reload task proposals when any change occurs
+          supabase
+            .from("task_proposals")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .then(({ data }) => setTaskProposals(data || []));
+        }
+      )
+      .subscribe();
+
+    // Subscribe to todo list
+    const todosSubscription = supabase
+      .channel("todo_list")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "todo_list",
+          filter: currentUserProfile ? `provider_id=eq.${currentUserProfile.id}` : undefined,
+        },
+        () => {
+          if (currentUserProfile) {
+            supabase
+              .from("todo_list")
+              .select("*")
+              .eq("provider_id", currentUserProfile.id)
+              .order("created_at", { ascending: false })
+              .then(({ data }) => setTodoItems(data || []));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      responsesSubscription.unsubscribe();
+      proposalsSubscription.unsubscribe();
+      todosSubscription.unsubscribe();
+    };
+  }, [currentUserProfile]);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -139,6 +229,20 @@ const TasksPage: React.FC = () => {
           data: { user },
         } = await supabase.auth.getUser();
         setCurrentUser(user);
+
+        // Get current user's profile and role
+        if (user) {
+          const { data: profileData } = await supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("user_id", user.id)
+            .single();
+
+          if (profileData) {
+            setCurrentUserProfile(profileData);
+            setUserRole(profileData.role as "guest" | "manager" | "service_provider");
+          }
+        }
 
         // Load internal staff (service_category = 'internal')
         const { data: internalData, error: internalError } = await supabase
@@ -176,6 +280,30 @@ const TasksPage: React.FC = () => {
 
         if (tasksError) throw tasksError;
         setTasks(tasksData || []);
+
+        // Load task responses
+        const { data: responsesData } = await supabase
+          .from("task_responses")
+          .select("*")
+          .order("created_at", { ascending: false });
+        setTaskResponses(responsesData || []);
+
+        // Load task proposals
+        const { data: proposalsData } = await supabase
+          .from("task_proposals")
+          .select("*")
+          .order("created_at", { ascending: false });
+        setTaskProposals(proposalsData || []);
+
+        // Load todo list items (for service providers)
+        if (user && profileData?.role === "service_provider") {
+          const { data: todosData } = await supabase
+            .from("todo_list")
+            .select("*")
+            .eq("provider_id", profileData.id)
+            .order("created_at", { ascending: false });
+          setTodoItems(todosData || []);
+        }
 
         // Load attachments for all tasks
         if (tasksData && tasksData.length > 0) {
@@ -1019,57 +1147,124 @@ const TasksPage: React.FC = () => {
 
           {/* To do List Tab */}
           <TabsContent value="todo-list" className="space-y-6">
-            {/* Toolbar */}
-            <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="flex-1 flex gap-2 w-full md:w-auto">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search tasks..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 border-gray-200"
-                  />
+            {userRole === "service_provider" ? (
+              // Service Provider View - Show their todos
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <CheckSquare className="h-6 w-6 text-sheraton-gold" />
+                  <div>
+                    <h2 className="text-2xl font-bold text-sheraton-navy">Your Tasks</h2>
+                    <p className="text-sm text-gray-600">Tasks you've accepted - manage your workload</p>
+                  </div>
                 </div>
 
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="w-40 border-gray-200">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="todo">To Do</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="in_review">In Review</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                {/* Filter by status */}
+                <div className="flex gap-2">
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-40 border-gray-200">
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Filter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="flex gap-2 border-l pl-4">
-                <Button
-                  variant={viewMode === "grid" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setViewMode("grid")}
-                  className={viewMode === "grid" ? "sheraton-gradient text-white" : ""}
-                  title="Grid view"
-                >
-                  <Grid3x3 className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={viewMode === "list" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setViewMode("list")}
-                  className={viewMode === "list" ? "sheraton-gradient text-white" : ""}
-                  title="List view"
-                >
-                  <List className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+                {/* Todo Items Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {todoItems
+                    .filter((todo) => filterStatus === "all" || todo.status === filterStatus)
+                    .map((todo) => (
+                      <TodoItem
+                        key={todo.id}
+                        todo={todo}
+                        onStatusChange={() => {
+                          // Reload todos
+                          if (currentUserProfile) {
+                            supabase
+                              .from("todo_list")
+                              .select("*")
+                              .eq("provider_id", currentUserProfile.id)
+                              .order("created_at", { ascending: false })
+                              .then(({ data }) => setTodoItems(data || []));
+                          }
+                        }}
+                      />
+                    ))}
+                </div>
 
-            {/* Tasks Display */}
+                {todoItems.length === 0 && (
+                  <Card className="border-2 border-dashed border-sheraton-gold bg-sheraton-cream">
+                    <CardContent className="p-12 text-center">
+                      <div className="flex justify-center mb-6">
+                        <CheckSquare className="h-16 w-16 text-sheraton-gold opacity-40" />
+                      </div>
+                      <h3 className="text-xl font-semibold text-sheraton-navy mb-2">No tasks yet</h3>
+                      <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+                        When you accept a task, it will appear here for you to manage
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            ) : (
+              // Manager View - Show created tasks
+              <>
+                {/* Toolbar */}
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <div className="flex-1 flex gap-2 w-full md:w-auto">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search tasks..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 border-gray-200"
+                      />
+                    </div>
+
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger className="w-40 border-gray-200">
+                        <Filter className="h-4 w-4 mr-2" />
+                        <SelectValue placeholder="Filter" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="todo">To Do</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="in_review">In Review</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex gap-2 border-l pl-4">
+                    <Button
+                      variant={viewMode === "grid" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setViewMode("grid")}
+                      className={viewMode === "grid" ? "sheraton-gradient text-white" : ""}
+                      title="Grid view"
+                    >
+                      <Grid3x3 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === "list" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setViewMode("list")}
+                      className={viewMode === "list" ? "sheraton-gradient text-white" : ""}
+                      title="List view"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Tasks Display */}
             <div
               className={
                 viewMode === "grid"
@@ -1167,13 +1362,32 @@ const TasksPage: React.FC = () => {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center gap-2 pt-4 border-t">
+                    <div className="flex items-center gap-2 pt-4 border-t flex-wrap">
                       <Badge
                         variant="outline"
                         className="bg-white"
                       >
                         {getStatusLabel(task.status)}
                       </Badge>
+
+                      {/* Show response button if this task is assigned to current service provider */}
+                      {userRole === "service_provider" &&
+                        task.assigned_to === currentUserProfile?.id &&
+                        !taskResponses.find((r) => r.task_id === task.id) && (
+                          <Button
+                            size="sm"
+                            className="ml-auto bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => {
+                              setSelectedTaskForResponse(task);
+                              setShowResponseModal(true);
+                            }}
+                          >
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            Respond
+                          </Button>
+                        )}
+
+                      {/* Always show chat button */}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -1181,7 +1395,7 @@ const TasksPage: React.FC = () => {
                           setSelectedTask(task.id);
                           handleTabChange("live-chat");
                         }}
-                        className="ml-auto hover:bg-sheraton-gold hover:text-white"
+                        className={`${userRole === "service_provider" && task.assigned_to === currentUserProfile?.id && !taskResponses.find((r) => r.task_id === task.id) ? "" : "ml-auto"} hover:bg-sheraton-gold hover:text-white`}
                       >
                         <MessageSquare className="h-4 w-4 mr-1" />
                         Chat
@@ -1192,99 +1406,48 @@ const TasksPage: React.FC = () => {
               ))}
             </div>
 
-            {filteredTasks.length === 0 && (
-              <Card className="col-span-full border-2 border-dashed border-sheraton-gold bg-sheraton-cream">
-                <CardContent className="p-12 text-center">
-                  <div className="flex justify-center mb-6">
-                    <CheckSquare className="h-16 w-16 text-sheraton-gold opacity-40" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-sheraton-navy mb-2">No tasks found</h3>
-                  <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-                    Try adjusting your search or filters, or create a new task to get started
-                  </p>
-                  <Button
-                    onClick={() => handleTabChange("new-task")}
-                    className="sheraton-gradient text-white"
-                  >
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Create New Task
-                  </Button>
-                </CardContent>
-              </Card>
+                {filteredTasks.length === 0 && (
+                  <Card className="col-span-full border-2 border-dashed border-sheraton-gold bg-sheraton-cream">
+                    <CardContent className="p-12 text-center">
+                      <div className="flex justify-center mb-6">
+                        <CheckSquare className="h-16 w-16 text-sheraton-gold opacity-40" />
+                      </div>
+                      <h3 className="text-xl font-semibold text-sheraton-navy mb-2">No tasks found</h3>
+                      <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+                        Try adjusting your search or filters, or create a new task to get started
+                      </p>
+                      <Button
+                        onClick={() => handleTabChange("new-task")}
+                        className="sheraton-gradient text-white"
+                      >
+                        <PlusCircle className="h-4 w-4 mr-2" />
+                        Create New Task
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
             )}
           </TabsContent>
 
           {/* Live Chat Tab */}
           <TabsContent value="live-chat" className="space-y-6">
             {selectedTask ? (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-300px)]">
                 {/* Chat Area */}
-                <Card className="lg:col-span-2 flex flex-col">
-                  <CardHeader className="border-b bg-gradient-to-r from-sheraton-cream to-white">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold text-sheraton-gold uppercase tracking-wide mb-1">Task</p>
-                        <CardTitle className="text-sheraton-navy">
-                          {tasks.find((t) => t.id === selectedTask)?.title}
-                        </CardTitle>
-                      </div>
-                      <Badge className="sheraton-gradient text-white">
-                        {tasks.find((t) => t.id === selectedTask)?.priority}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4 flex-1 flex flex-col p-6">
-                    <div className="bg-white rounded-lg p-4 h-80 overflow-y-auto space-y-4 border border-gray-200">
-                      {messages
-                        .filter((m) => m.taskId === selectedTask)
-                        .length === 0 ? (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                          <p className="text-sm">No messages yet. Start the conversation!</p>
-                        </div>
-                      ) : (
-                        messages
-                          .filter((m) => m.taskId === selectedTask)
-                          .map((message) => (
-                            <div key={message.id} className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-sm text-sheraton-navy">
-                                  {message.author}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {new Date(message.timestamp).toLocaleTimeString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-700 bg-sheraton-cream p-3 rounded-lg">
-                                {message.content}
-                              </p>
-                            </div>
-                          ))
-                      )}
-                    </div>
-
-                    <div className="flex gap-2 mt-auto">
-                      <Input
-                        placeholder="Type your message..."
-                        value={chatMessage}
-                        onChange={(e) => setChatMessage(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === "Enter") handleSendMessage();
-                        }}
-                        className="border-gray-200"
-                      />
-                      <Button
-                        onClick={handleSendMessage}
-                        className="sheraton-gradient text-white hover:opacity-90"
-                        disabled={!chatMessage.trim()}
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                {currentUser && userRole && (
+                  <TaskChat
+                    taskId={selectedTask}
+                    currentUserId={currentUser.id}
+                    currentUserRole={userRole as "manager" | "service_provider"}
+                    taskStatus={tasks.find((t) => t.id === selectedTask)?.status || ""}
+                    otherPartyName={
+                      userRole === "manager"
+                        ? tasks.find((t) => t.id === selectedTask)?.assignee_name || "Provider"
+                        : tasks.find((t) => t.id === selectedTask)?.title || "Manager"
+                    }
+                  />
+                )}
 
                 {/* Task Details Sidebar */}
                 <Card className="bg-gradient-to-b from-sheraton-cream to-white border-sheraton-gold">
