@@ -1,63 +1,61 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MuxPlayer from '@mux/mux-player-react';
 import { supabase } from '../lib/supabase';
 
 interface MuxVideoPlayerProps {
   attachmentId: string;
   b2Url: string;
-  fileName?: string;
 }
 
 export const MuxVideoPlayer: React.FC<MuxVideoPlayerProps> = ({
   attachmentId,
   b2Url,
-  fileName = 'Video',
 }) => {
   const [playbackId, setPlaybackId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const fetchPlaybackId = useCallback(async (retryCount = 0) => {
-    const MAX_RETRIES = 3;
-    
-    try {
-      // Get attachment filename
-      const { data: attachmentData } = await supabase
-        .from('attachments')
-        .select('filename')
-        .eq('id', attachmentId)
-        .single();
-
-      if (!attachmentData?.filename) {
-        setIsLoading(false);
-        return;
-      }
-
-      // Get video_uploads record
-      const { data: videoRecords } = await supabase
-        .from('video_uploads')
-        .select('playback_id, status')
-        .eq('filename', attachmentData.filename)
-        .single();
-
-      if (videoRecords?.playback_id && videoRecords.status === 'ready') {
-        setPlaybackId(videoRecords.playback_id);
-        setIsLoading(false);
-      } else if (videoRecords?.status === 'processing' && retryCount < MAX_RETRIES) {
-        // Retry after delay
-        setTimeout(() => fetchPlaybackId(retryCount + 1), 1500);
-      } else {
-        setIsLoading(false);
-      }
-    } catch (error) {
-      setIsLoading(false);
-    }
-  }, [attachmentId]);
+  const timeoutRef = useRef<NodeJS.Timeout>();
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    fetchPlaybackId();
-  }, [attachmentId, fetchPlaybackId]);
+    isMountedRef.current = true;
+    let retries = 0;
 
-  // Mux player ready
+    const fetch = async () => {
+      try {
+        const { data: att } = await supabase
+          .from('attachments')
+          .select('filename')
+          .eq('id', attachmentId)
+          .single();
+
+        if (!att?.filename || !isMountedRef.current) return;
+
+        const { data: video } = await supabase
+          .from('video_uploads')
+          .select('playback_id, status')
+          .eq('filename', att.filename)
+          .single();
+
+        if (!isMountedRef.current) return;
+
+        if (video?.playback_id && video.status === 'ready') {
+          setPlaybackId(video.playback_id);
+        } else if (video?.status === 'processing' && retries < 3) {
+          retries++;
+          timeoutRef.current = setTimeout(fetch, 1500);
+        }
+      } catch (e) {
+        // Silently fail, use B2 fallback
+      }
+    };
+
+    fetch();
+
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [attachmentId]);
+
   if (playbackId) {
     return (
       <div className="w-full aspect-video bg-black rounded-lg overflow-hidden">
@@ -65,29 +63,15 @@ export const MuxVideoPlayer: React.FC<MuxVideoPlayerProps> = ({
           playbackId={playbackId}
           streamType="on-demand"
           controls
-          title={fileName}
           style={{ width: '100%', height: '100%' }}
         />
       </div>
     );
   }
 
-  // Loading or fallback to B2
-  if (isLoading) {
-    return (
-      <div className="w-full aspect-video bg-gray-200 rounded-lg animate-pulse" />
-    );
-  }
-
-  // B2 fallback
   return (
     <div className="w-full aspect-video bg-black rounded-lg overflow-hidden">
-      <video
-        src={b2Url}
-        controls
-        className="w-full h-full object-contain"
-        title={fileName}
-      />
+      <video src={b2Url} controls className="w-full h-full object-contain" />
     </div>
   );
 };
