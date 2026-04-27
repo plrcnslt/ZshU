@@ -81,8 +81,66 @@ export interface Notification {
   user_id: string
   complaint_id: string | null
   task_id: string | null
-  type: 'complaint_filed' | 'complaint_acknowledged' | 'task_created' | 'task_updated' | 'task_assigned'
+  type: 'complaint_filed' | 'complaint_acknowledged' | 'task_created' | 'task_updated' | 'task_assigned' | 'task_accepted' | 'task_declined' | 'task_proposed' | 'proposal_accepted' | 'proposal_declined' | 'proposal_updated' | 'todo_created' | 'task_message'
   message: string
   is_read: boolean
   created_at: string
+}
+
+export interface TaskResponse {
+  id: string
+  task_id: string
+  provider_id: string
+  action: 'accept' | 'decline' | 'propose'
+  response_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TaskProposal {
+  id: string
+  task_id: string
+  provider_id: string
+  manager_id: string
+  status: 'pending' | 'accepted' | 'declined' | 'counter_proposed'
+  quoted_price: number | null
+  proposal_notes: string | null
+  proposed_timeline: string | null
+  attachments: Array<{id: string; name: string; size: number}> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TodoListItem {
+  id: string
+  task_id: string
+  provider_id: string
+  status: 'pending' | 'in_progress' | 'completed'
+  title: string
+  description: string | null
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  due_date: string | null
+  estimated_hours: number | null
+  details: {
+    category?: string
+    estimated_time?: string
+    payment_terms?: string
+    budget?: number
+  } | null
+  attachments: Array<{id: string; name: string; size: number}> | null
+  created_at: string
+  completed_at: string | null
+  updated_at: string
+}
+
+export interface TaskMessage {
+  id: string
+  task_id: string
+  sender_id: string
+  sender_role: 'manager' | 'service_provider'
+  message_text: string
+  attachments: Array<{id: string; name: string; size: number}> | null
+  is_read: boolean
+  created_at: string
+  updated_at: string
 }
