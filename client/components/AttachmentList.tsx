@@ -19,6 +19,7 @@ interface Attachment {
   attachmentId?: string; // Used by UploadedFile
   name?: string;
   originalName?: string; // Used by UploadedFile
+  filename?: string; // Used by UploadedFile (for video uploads)
   type?: string;
   fileType?: string; // Used by UploadedFile
   size?: number;
@@ -148,11 +149,11 @@ const AttachmentList: React.FC<AttachmentListProps> = ({ attachments, compact = 
             {videos.map((attachment) => {
               const fileName = getFileNameFromAttachment(attachment);
               const fileUrl = getFileUrlFromAttachment(attachment);
-              const attId = attachment.id || attachment.attachmentId || '';
+              const videoFilename = attachment.filename || '';
               return (
-                <div key={attId} className="w-full">
+                <div key={videoFilename} className="w-full">
                   <p className="text-xs font-medium text-gray-600 mb-2">{fileName}</p>
-                  {attId && <MuxVideoPlayer attachmentId={attId} b2Url={fileUrl} fileName={fileName} />}
+                  {videoFilename && <MuxVideoPlayer filename={videoFilename} b2Url={fileUrl} />}
                 </div>
               );
             })}
@@ -237,11 +238,11 @@ const AttachmentList: React.FC<AttachmentListProps> = ({ attachments, compact = 
             {videos.map((attachment) => {
               const fileName = getFileNameFromAttachment(attachment);
               const fileUrl = getFileUrlFromAttachment(attachment);
-              const attId = attachment.id || attachment.attachmentId || '';
+              const videoFilename = attachment.filename || '';
               return (
-                <div key={attId} className="space-y-2">
+                <div key={videoFilename} className="space-y-2">
                   <p className="text-xs font-medium text-gray-600">{fileName}</p>
-                  {attId && <MuxVideoPlayer attachmentId={attId} b2Url={fileUrl} fileName={fileName} />}
+                  {videoFilename && <MuxVideoPlayer filename={videoFilename} b2Url={fileUrl} />}
                 </div>
               );
             })}
