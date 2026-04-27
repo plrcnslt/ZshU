@@ -96,8 +96,43 @@ export async function uploadToB2(
 }
 
 /**
+ * Trigger Mux processing for a video file already uploaded to B2
+ *
+ * @param filename - The filename in B2 (from B2 upload result)
+ * @param userId - The user ID
+ * @returns The Mux asset data or error
+ */
+async function processVideoWithMux(
+  filename: string,
+  userId: string
+): Promise<{ assetId?: string; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('process-new-video', {
+      body: { filename, userId },
+    });
+
+    if (error) {
+      console.error('Error triggering video processing:', error);
+      return {
+        error: error?.message || 'Failed to trigger Mux processing',
+      };
+    }
+
+    return {
+      assetId: data?.data?.id,
+    };
+  } catch (err) {
+    console.error('Error calling process-new-video:', err);
+    return {
+      error: err instanceof Error ? err.message : 'Failed to process video',
+    };
+  }
+}
+
+/**
  * Upload a file to B2 and store metadata in database
- * 
+ * For videos, also triggers Mux processing
+ *
  * @param file - The file to upload
  * @param folderPath - The folder path in B2
  * @param userId - The user ID for the attachment record
@@ -111,7 +146,7 @@ export async function uploadFileWithMetadata(
   try {
     // Step 1: Upload file to B2
     const uploadResult = await uploadToB2(file, folderPath);
-    
+
     if (uploadResult.error) {
       return {
         attachmentId: null,
@@ -154,6 +189,17 @@ export async function uploadFileWithMetadata(
         publicUrl: uploadResult.publicUrl,
         error: `File uploaded but failed to record metadata: ${dbError.message}`,
       };
+    }
+
+    // Step 4: If it's a video, trigger Mux processing
+    if (fileType === 'video' && attachmentData?.id) {
+      const muxResult = await processVideoWithMux(uploadResult.filename, userId);
+      if (muxResult.error) {
+        console.warn('Video uploaded but Mux processing failed:', muxResult.error);
+        // Don't fail the upload - the attachment is still created and can be played from B2
+      } else if (muxResult.assetId) {
+        console.log(`Video uploaded and sent to Mux for processing. Asset ID: ${muxResult.assetId}`);
+      }
     }
 
     return {

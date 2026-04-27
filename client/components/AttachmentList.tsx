@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
+import MuxVideoPlayer from "./MuxVideoPlayer";
 
 interface Attachment {
   id?: string;
@@ -99,6 +100,17 @@ const AttachmentList: React.FC<AttachmentListProps> = ({ attachments, compact = 
     return null;
   }
 
+  // Separate videos from other attachments
+  const videos = attachments.filter(att => {
+    const fileType = att.fileType || att.type;
+    return fileType === 'video';
+  });
+
+  const otherAttachments = attachments.filter(att => {
+    const fileType = att.fileType || att.type;
+    return fileType !== 'video';
+  });
+
   const getFileNameFromAttachment = (attachment: Attachment): string => {
     return attachment.originalName || attachment.name || "Attachment";
   };
@@ -129,61 +141,83 @@ const AttachmentList: React.FC<AttachmentListProps> = ({ attachments, compact = 
 
   if (compact) {
     return (
-      <div className="flex items-center gap-2 relative">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors cursor-pointer"
-        >
-          <Paperclip className="h-3 w-3" />
-          {attachments.length} file{attachments.length !== 1 ? "s" : ""}
-        </button>
-
-        {expanded && (
-          <div className="absolute z-50 top-full mt-2 left-0 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-4 space-y-2">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-sm text-gray-900">Attachments</h4>
-              <button
-                onClick={() => setExpanded(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {attachments.map((attachment) => {
+      <div className="space-y-3">
+        {/* Videos section */}
+        {videos.length > 0 && (
+          <div className="space-y-2">
+            {videos.map((attachment) => {
               const fileName = getFileNameFromAttachment(attachment);
-              const fileSize = getFileSizeFromAttachment(attachment);
-              const fileType = getFileTypeFromAttachment(attachment);
+              const fileUrl = getFileUrlFromAttachment(attachment);
+              const attId = attachment.id || attachment.attachmentId || '';
               return (
-                <div
-                  key={attachment.id || attachment.attachmentId}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="flex-shrink-0 text-gray-500">
-                      {getFileIcon(fileName, fileType)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {fileName}
-                      </p>
-                      {fileSize && (
-                        <p className="text-xs text-gray-500">{formatFileSize(fileSize)}</p>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDownload(attachment)}
-                    className="flex-shrink-0 text-gray-500 hover:text-gray-900"
-                    title="Download file"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
+                <div key={attId} className="w-full">
+                  <p className="text-xs font-medium text-gray-600 mb-2">{fileName}</p>
+                  {attId && <MuxVideoPlayer attachmentId={attId} b2Url={fileUrl} fileName={fileName} />}
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Other attachments button */}
+        {otherAttachments.length > 0 && (
+          <div className="flex items-center gap-2 relative">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors cursor-pointer"
+            >
+              <Paperclip className="h-3 w-3" />
+              {otherAttachments.length} file{otherAttachments.length !== 1 ? "s" : ""}
+            </button>
+
+            {expanded && (
+              <div className="absolute z-50 top-full mt-2 left-0 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-4 space-y-2">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold text-sm text-gray-900">Attachments</h4>
+                  <button
+                    onClick={() => setExpanded(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {otherAttachments.map((attachment) => {
+                  const fileName = getFileNameFromAttachment(attachment);
+                  const fileSize = getFileSizeFromAttachment(attachment);
+                  const fileType = getFileTypeFromAttachment(attachment);
+                  return (
+                    <div
+                      key={attachment.id || attachment.attachmentId}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="flex-shrink-0 text-gray-500">
+                          {getFileIcon(fileName, fileType)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {fileName}
+                          </p>
+                          {fileSize && (
+                            <p className="text-xs text-gray-500">{formatFileSize(fileSize)}</p>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDownload(attachment)}
+                        className="flex-shrink-0 text-gray-500 hover:text-gray-900"
+                        title="Download file"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -191,80 +225,110 @@ const AttachmentList: React.FC<AttachmentListProps> = ({ attachments, compact = 
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="font-semibold text-sm text-gray-900 flex items-center gap-2">
-          <Paperclip className="h-4 w-4" />
-          Attachments ({attachments.length})
-        </h4>
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-xs font-medium text-blue-600 hover:text-blue-700"
-        >
-          {expanded ? "Hide" : "Show"}
-        </button>
-      </div>
-
-      {expanded && (
-        <div className="space-y-2 bg-gray-50 rounded-lg p-3">
-          {attachments.map((attachment) => {
-            const fileName = getFileNameFromAttachment(attachment);
-            const fileSize = getFileSizeFromAttachment(attachment);
-            const fileType = getFileTypeFromAttachment(attachment);
-            return (
-              <div
-                key={attachment.id || attachment.attachmentId}
-                className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="flex-shrink-0 p-2 bg-blue-100 text-blue-600 rounded">
-                    {getFileIcon(fileName, fileType)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {fileName}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs">
-                        {getFileExtension(fileName)}
-                      </Badge>
-                      {fileSize && (
-                        <span className="text-xs text-gray-500">{formatFileSize(fileSize)}</span>
-                      )}
-                    </div>
-                  </div>
+    <div className="space-y-4">
+      {/* Videos section */}
+      {videos.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="font-semibold text-sm text-gray-900 flex items-center gap-2">
+            <Video className="h-4 w-4" />
+            Videos ({videos.length})
+          </h4>
+          <div className="space-y-2">
+            {videos.map((attachment) => {
+              const fileName = getFileNameFromAttachment(attachment);
+              const fileUrl = getFileUrlFromAttachment(attachment);
+              const attId = attachment.id || attachment.attachmentId || '';
+              return (
+                <div key={attId} className="space-y-2">
+                  <p className="text-xs font-medium text-gray-600">{fileName}</p>
+                  {attId && <MuxVideoPlayer attachmentId={attId} b2Url={fileUrl} fileName={fileName} />}
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleDownload(attachment)}
-                  className="flex-shrink-0 ml-2"
-                  title="Download file"
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {!expanded && (
-        <div className="flex flex-wrap gap-2">
-          {attachments.slice(0, 3).map((attachment) => {
-            const fileName = getFileNameFromAttachment(attachment);
-            const fileType = getFileTypeFromAttachment(attachment);
-            return (
-              <Badge key={attachment.id || attachment.attachmentId} variant="outline" className="text-xs">
-                {getFileIcon(fileName, fileType)}
-                <span className="ml-1">{fileName.length > 20 ? fileName.substring(0, 20) + "..." : fileName}</span>
-              </Badge>
-            );
-          })}
-          {attachments.length > 3 && (
-            <Badge variant="outline" className="text-xs cursor-pointer hover:bg-gray-100" onClick={() => setExpanded(true)}>
-              +{attachments.length - 3} more
-            </Badge>
+      {/* Other attachments section */}
+      {otherAttachments.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-sm text-gray-900 flex items-center gap-2">
+              <Paperclip className="h-4 w-4" />
+              Files ({otherAttachments.length})
+            </h4>
+            {otherAttachments.length > 3 && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                {expanded ? "Hide" : "Show"}
+              </button>
+            )}
+          </div>
+
+          {(expanded || otherAttachments.length <= 3) && (
+            <div className="space-y-2 bg-gray-50 rounded-lg p-3">
+              {otherAttachments.map((attachment) => {
+                const fileName = getFileNameFromAttachment(attachment);
+                const fileSize = getFileSizeFromAttachment(attachment);
+                const fileType = getFileTypeFromAttachment(attachment);
+                return (
+                  <div
+                    key={attachment.id || attachment.attachmentId}
+                    className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="flex-shrink-0 p-2 bg-blue-100 text-blue-600 rounded">
+                        {getFileIcon(fileName, fileType)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {fileName}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className="text-xs">
+                            {getFileExtension(fileName)}
+                          </Badge>
+                          {fileSize && (
+                            <span className="text-xs text-gray-500">{formatFileSize(fileSize)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleDownload(attachment)}
+                      className="flex-shrink-0 ml-2"
+                      title="Download file"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!expanded && otherAttachments.length > 3 && (
+            <div className="flex flex-wrap gap-2">
+              {otherAttachments.slice(0, 3).map((attachment) => {
+                const fileName = getFileNameFromAttachment(attachment);
+                const fileType = getFileTypeFromAttachment(attachment);
+                return (
+                  <Badge key={attachment.id || attachment.attachmentId} variant="outline" className="text-xs">
+                    {getFileIcon(fileName, fileType)}
+                    <span className="ml-1">{fileName.length > 20 ? fileName.substring(0, 20) + "..." : fileName}</span>
+                  </Badge>
+                );
+              })}
+              {otherAttachments.length > 3 && (
+                <Badge variant="outline" className="text-xs cursor-pointer hover:bg-gray-100" onClick={() => setExpanded(true)}>
+                  +{otherAttachments.length - 3} more
+                </Badge>
+              )}
+            </div>
           )}
         </div>
       )}
