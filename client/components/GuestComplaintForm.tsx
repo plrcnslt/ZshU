@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useFileUpload, UploadedFile } from "../hooks/useFileUpload";
+import VoiceRecorder from "./VoiceRecorder";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,6 @@ import { Badge } from "./ui/badge";
 import {
   AlertCircle,
   Upload,
-  Mic,
   X,
   CheckCircle,
   Send,
@@ -33,7 +33,7 @@ import {
 interface ComplaintAttachment {
   id: string;
   name: string;
-  type: "image" | "video" | "file" | "voice";
+  type: "image" | "video" | "file" | "audio";
   size: number;
 }
 
@@ -45,7 +45,6 @@ interface GuestComplaint {
   description: string;
   priority: string;
   attachments: ComplaintAttachment[];
-  voiceNote?: string;
 }
 
 interface GuestComplaintFormProps {
@@ -59,7 +58,6 @@ const GuestComplaintForm: React.FC<GuestComplaintFormProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -135,25 +133,36 @@ const GuestComplaintForm: React.FC<GuestComplaintFormProps> = ({
     }));
   };
 
-  const handleStartRecording = () => {
-    setIsRecording(true);
-    // In a real app, this would start the recording
-  };
+  const handleVoiceRecordingComplete = async (audioFile: File) => {
+    setIsUploading(true);
+    try {
+      const uploaded = await uploadMultipleFiles([audioFile], 'complaints');
 
-  const handleStopRecording = () => {
-    setIsRecording(false);
-    // In a real app, this would stop and save the recording
-    const voiceAttachment: ComplaintAttachment = {
-      id: `voice-${Date.now()}`,
-      name: "Voice Note",
-      type: "voice",
-      size: 0,
-    };
-    setComplaint((prev) => ({
-      ...prev,
-      attachments: [...prev.attachments, voiceAttachment],
-      voiceNote: "recorded",
-    }));
+      if (uploaded && uploaded.length > 0) {
+        setUploadedFiles((prev) => [...prev, ...uploaded]);
+
+        // Update complaint attachments metadata for display
+        uploaded.forEach((file) => {
+          const newAttachment: ComplaintAttachment = {
+            id: file.attachmentId,
+            name: file.originalName,
+            type: "audio",
+            size: file.fileSize,
+          };
+          setComplaint((prev) => ({
+            ...prev,
+            attachments: [...prev.attachments, newAttachment],
+          }));
+        });
+      }
+    } catch (error) {
+      console.error("Error uploading voice note:", error);
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to upload voice note"
+      );
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -438,26 +447,10 @@ const GuestComplaintForm: React.FC<GuestComplaintFormProps> = ({
               {/* Voice Note */}
               <div className="space-y-2">
                 <Label>Voice Note (Optional)</Label>
-                {!isRecording ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleStartRecording}
-                    className="w-full"
-                  >
-                    <Mic className="h-4 w-4 mr-2" />
-                    Record Voice Note
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={handleStopRecording}
-                    className="w-full bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    <Mic className="h-4 w-4 mr-2" />
-                    Stop Recording
-                  </Button>
-                )}
+                <VoiceRecorder
+                  onRecordingComplete={handleVoiceRecordingComplete}
+                  disabled={isUploading || isSubmitting}
+                />
               </div>
 
               {/* Attachment List */}
