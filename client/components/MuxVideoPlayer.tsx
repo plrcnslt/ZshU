@@ -3,12 +3,12 @@ import MuxPlayer from '@mux/mux-player-react';
 import { supabase } from '../lib/supabase';
 
 interface MuxVideoPlayerProps {
-  attachmentId: string;
+  filename: string;
   b2Url: string;
 }
 
 export const MuxVideoPlayer: React.FC<MuxVideoPlayerProps> = ({
-  attachmentId,
+  filename,
   b2Url,
 }) => {
   const [playbackId, setPlaybackId] = useState<string | null>(null);
@@ -21,19 +21,11 @@ export const MuxVideoPlayer: React.FC<MuxVideoPlayerProps> = ({
 
     const fetch = async () => {
       try {
-        const { data: att } = await supabase
-          .from('attachments')
-          .select('filename')
-          .eq('id', attachmentId)
-          .single();
-
-        if (!att?.filename || !isMountedRef.current) return;
-
         const { data: video } = await supabase
           .from('video_uploads')
           .select('playback_id, status')
-          .eq('filename', att.filename)
-          .single();
+          .eq('filename', filename)
+          .maybeSingle();
 
         if (!isMountedRef.current) return;
 
@@ -54,7 +46,7 @@ export const MuxVideoPlayer: React.FC<MuxVideoPlayerProps> = ({
       isMountedRef.current = false;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [attachmentId]);
+  }, [filename]);
 
   if (playbackId) {
     return (
